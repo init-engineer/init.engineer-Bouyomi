@@ -34,7 +34,7 @@ _now_day_string = time.strftime("%Y-%m-%d", _now_array)
 @app.route("/live")
 def live():
     facebookLive()
-    # twitch.Chat(channel=config.twitch.channel, nickname=config.twitch.nickname, oauth=config.twitch.token).subscribe(lambda message: twitchLive(message))
+    twitch.Chat(channel=config.twitch.channel, nickname=config.twitch.nickname, oauth=config.twitch.token).subscribe(lambda message: twitchLive(message))
     return "LIVE"
 
 
