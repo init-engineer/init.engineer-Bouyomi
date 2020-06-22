@@ -1,0 +1,6 @@
+azure-cognitiveservices-speech
+aiohttp
+sseclient-py
+twitch-python
+websockets
+flask
