@@ -12,11 +12,17 @@ import socket
 import sseclient
 import azure.cognitiveservices.speech as speechsdk
 
+from pydouyu.client import Client as douyuClient
+from pytchat import LiveChat as youtubeClient
+from pytchat import CompatibleProcessor
+
 from pathlib import Path
 from sse import Publisher
 from datetime import datetime
 from playsound import playsound
 from xml.etree.ElementTree import Element, SubElement, ElementTree
+
+import threading
 
 
 app = flask.Flask(__name__)
@@ -30,11 +36,29 @@ _now_timestamp = int(time.time())
 _now_array = time.localtime(_now_timestamp)
 _now_day_string = time.strftime("%Y-%m-%d", _now_array)
 
+if config.youtube.active:
+    youtubeChat = youtubeClient(config.youtube.video_id, processor = CompatibleProcessor()) 
 
 @app.route("/live")
 def live():
-    facebookLive()
-    twitch.Chat(channel=config.twitch.channel, nickname=config.twitch.nickname, oauth=config.twitch.token).subscribe(lambda message: twitchLive(message))
+    if config.facebook.active:
+        facebookLive()
+    if config.twitch.active:
+        helix = twitch.Helix(
+        client_id=config.twitch.client_id,
+        use_cache=True,
+        bearer_token=config.twitch.bearer_token
+        )
+        twitch.Chat(channel=config.twitch.channel, nickname=config.twitch.nickname, oauth=config.twitch.token).subscribe(lambda message: twitchLive(message, helix))
+    if config.douyu.active:        
+        douyu=douyuClient(room_id=config.douyu.room_id,barrage_host=config.douyu.barrage_host)
+        douyu.add_handler('chatmsg', douyuLiveMessage)
+        douyu.start()
+    if config.youtube.active: 
+        # 建立一個子執行緒
+        t = threading.Thread(target = youtubeLiveMessage)
+        t.start()
+
     return "LIVE"
 
 
@@ -243,7 +267,6 @@ def root():
 </html>
 """
 
-
 def makedirs():
     """將所需的資料夾建立起來。"""
     if not os.path.exists("./talks"):
@@ -257,7 +280,6 @@ def makedirs():
     if not os.path.exists("./talks/xmls/" + _now_day_string):
         os.makedirs("./talks/xmls/" + _now_day_string)
 
-
 def facebookLive():
     """"輸出 Facebook 的聊天內容。"""
     url = "https://streaming-graph.facebook.com/" + config.facebook.live_video_id + "/live_comments?access_token=" + config.facebook.access_token + "&comment_rate=one_per_two_seconds&fields=from{name,id},message"
@@ -270,12 +292,38 @@ def facebookLive():
         voice(data['message'])
 
 
-def twitchLive(data):
+def twitchLive(data, helix):
     """"輸出 Twitch 的聊天內容。"""
-    print(f"[Twitch] {data.sender}: {data.text}")
-    publisher.publish(json.dumps({"channel": "twitch", "author": data.sender, "message": data.text, "time": time.strftime("%H:%M:%S")}))
+    print(f"[Twitch] {data.sender}: {data.text}")   
+
+    author = helix.user(data.sender).display_name
+    
+    publisher.publish(json.dumps({"channel": "twitch", "author":author , "message": data.text, "time": time.strftime("%H:%M:%S")}))
     voice(data.text)
 
+def youtubeLiveMessage():
+    """輸出Youtube的聊天內容。"""     
+    while youtubeChat.is_alive():
+            try:            
+                data = youtubeChat.get()
+                polling = data['pollingIntervalMillis']/1000
+                for c in data['items']:
+                    if c.get('snippet'):
+                        publisher.publish(json.dumps({"channel": "youtube", "author":c['authorDetails']['displayName'] , "message": c['snippet']['displayMessage'], "time": time.strftime("%H:%M:%S")}))
+                        voice(c['snippet']['displayMessage'])                       
+                        time.sleep(polling/len(data['items']))
+            except KeyboardInterrupt:
+                youtubeChat.terminate()  
+            except Exception as e:
+                print("youtube failed. Exception: %s" % e)
+
+def douyuLiveMessage(data):
+    """輸出鬥魚的聊天內容。"""
+    try:
+        publisher.publish(json.dumps({"channel": "douyu", "author":data['nn'] , "message":  data['txt'], "time": time.strftime("%H:%M:%S")}))
+        voice(data['txt'])       
+    except Exception as e:
+        print("douyuLiveMessage failed. Exception: %s" % e)
 
 def voice(message: str):
     """產生神經語言的聲音檔案。"""
@@ -354,4 +402,3 @@ def with_requests(url):
 if __name__ == "__main__":
     makedirs()
     app.run(debug=True, threaded=True)
-
