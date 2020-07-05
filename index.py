@@ -36,20 +36,20 @@ _now_timestamp = int(time.time())
 _now_array = time.localtime(_now_timestamp)
 _now_day_string = time.strftime("%Y-%m-%d", _now_array)
 
-helix = twitch.Helix(
-client_id=config.twitch.client_id,
-use_cache=True,
-bearer_token=config.twitch.bearer_token
-)
-
-youtubeChat = youtubeClient(config.youtube.video_id, processor = CompatibleProcessor()) 
+if config.youtube.active:
+    youtubeChat = youtubeClient(config.youtube.video_id, processor = CompatibleProcessor()) 
 
 @app.route("/live")
 def live():
     if config.facebook.active:
         facebookLive()
     if config.twitch.active:
-        twitch.Chat(channel=config.twitch.channel, nickname=config.twitch.nickname, oauth=config.twitch.token).subscribe(lambda message: twitchLive(message))
+        helix = twitch.Helix(
+        client_id=config.twitch.client_id,
+        use_cache=True,
+        bearer_token=config.twitch.bearer_token
+        )
+        twitch.Chat(channel=config.twitch.channel, nickname=config.twitch.nickname, oauth=config.twitch.token).subscribe(lambda message: twitchLive(message, helix))
     if config.douyu.active:        
         douyu=douyuClient(room_id=config.douyu.room_id,barrage_host=config.douyu.barrage_host)
         douyu.add_handler('chatmsg', douyuLiveMessage)
@@ -292,7 +292,7 @@ def facebookLive():
         voice(data['message'])
 
 
-def twitchLive(data):
+def twitchLive(data, helix):
     """"輸出 Twitch 的聊天內容。"""
     print(f"[Twitch] {data.sender}: {data.text}")   
 
