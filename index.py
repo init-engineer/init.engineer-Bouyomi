@@ -11,13 +11,10 @@ import config
 import socket
 import sseclient
 import azure.cognitiveservices.speech as speechsdk
-from pydouyu.client import Client as douyuClient
 
+from pydouyu.client import Client as douyuClient
 from pytchat import LiveChat as youtubeClient
 from pytchat import CompatibleProcessor
-
-import sys
-
 
 from pathlib import Path
 from sse import Publisher
@@ -45,7 +42,7 @@ use_cache=True,
 bearer_token=config.twitch.bearer_token
 )
 
-youtubeChat = youtubeClient("-QrOmKyviUE", processor = CompatibleProcessor()) 
+youtubeChat = youtubeClient(config.youtube.video_id, processor = CompatibleProcessor()) 
 
 @app.route("/live")
 def live():
@@ -403,5 +400,5 @@ def with_requests(url):
 
 
 if __name__ == "__main__":
-    makedirs()    
+    makedirs()
     app.run(debug=True, threaded=True)
