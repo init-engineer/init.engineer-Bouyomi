@@ -270,7 +270,6 @@ def root():
 </html>
 """
 
-
 def makedirs():
     """將所需的資料夾建立起來。"""
     if not os.path.exists("./talks"):
@@ -283,7 +282,6 @@ def makedirs():
         os.makedirs("./talks/voices/" + _now_day_string)
     if not os.path.exists("./talks/xmls/" + _now_day_string):
         os.makedirs("./talks/xmls/" + _now_day_string)
-
 
 def facebookLive():
     """"輸出 Facebook 的聊天內容。"""
@@ -329,7 +327,6 @@ def douyuLiveMessage(data):
         voice(data['txt'])       
     except Exception as e:
         print("douyuLiveMessage failed. Exception: %s" % e)
-
 
 def voice(message: str):
     """產生神經語言的聲音檔案。"""
@@ -408,6 +405,3 @@ def with_requests(url):
 if __name__ == "__main__":
     makedirs()    
     app.run(debug=True, threaded=True)
-    
-    
-
