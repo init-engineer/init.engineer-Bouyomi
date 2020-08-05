@@ -18,22 +18,22 @@
         "active": false,
         "channel": "YOUR_TWITCH_CHANNEL",
         "nickname": "YOUR_TWITCH_NICKNAME",
-        "token": "YOUR_TWITCH_OAUTH_TOKEN"
-        "client_id":"YOUR_TWITCH_CLIENT_ID",
-        "bearer_token":"YOUR_BEARER_TOKEN"
+        "token": "YOUR_TWITCH_OAUTH_TOKEN",
+        "client_id": "YOUR_TWITCH_CLIENT_ID",
+        "bearer_token": "YOUR_BEARER_TOKEN"
     },
     "facebook": {
-        "active": true,
+        "active": false,
         "access_token": "YOUR_FACEBOOK_ACCESS_TOKEN",
         "live_video_id": "YOUR_FACEBOOK_LIVE_VIDEO_ID"
     },
-    "youtube":{
-        "active": true,
-        "video_id":"YOUR_VIDEO_ID"
+    "youtube": {
+        "active": false,
+        "video_id": "YOUR_VIDEO_ID"
     },
-    "douyu":{
-        "active": true,
+    "douyu": {
+        "active": false,
         "room_id": "YOUR_ROOM_ID",
-        "barrage_host":"YOUT_BARRAGE_HOST"
+        "barrage_host": "YOUT_BARRAGE_HOST"
     }
 }
