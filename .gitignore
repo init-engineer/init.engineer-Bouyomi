@@ -1,6 +1,10 @@
 # Custom
 talks/
-config.json
+ssml.xml
+
+# Old Custom
+old/talks/
+old/ssml.xml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

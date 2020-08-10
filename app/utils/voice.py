@@ -3,7 +3,6 @@
 # @Time    : 2020/08/07
 
 
-import os
 import time
 import random
 import string
@@ -89,20 +88,5 @@ def randomString(stringLength=8):
     return ''.join(random.choice(letters) for i in range(stringLength))
 
 
-def makedirs():
-    """將所需的資料夾建立起來。"""
-    if not os.path.exists("./talks"):
-        os.makedirs("./talks")
-    if not os.path.exists("./talks/voices"):
-        os.makedirs("./talks/voices")
-    if not os.path.exists("./talks/xmls"):
-        os.makedirs("./talks/xmls")
-    if not os.path.exists("./talks/voices/" + _now_day_string):
-        os.makedirs("./talks/voices/" + _now_day_string)
-    if not os.path.exists("./talks/xmls/" + _now_day_string):
-        os.makedirs("./talks/xmls/" + _now_day_string)
-
-
 if __name__ == '__main__':
-    makedirs()
     pass

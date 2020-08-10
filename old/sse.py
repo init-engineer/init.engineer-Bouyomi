@@ -1,6 +1,7 @@
 from queue import Queue
 from collections import defaultdict
 
+
 class Publisher(object):
     """
     Contains a list of subscribers that can can receive updates.
@@ -98,7 +99,6 @@ class Publisher(object):
             if data is Publisher.END_STREAM:
                 return
             yield data
-
 
     def close(self):
         """

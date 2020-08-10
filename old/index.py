@@ -7,39 +7,35 @@ import pprint
 import random
 import string
 import twitch
-import config
 import socket
+import threading
 import sseclient
 import azure.cognitiveservices.speech as speechsdk
 
-from pydouyu.client import Client as douyuClient
-from pytchat import LiveChat as youtubeClient
-from pytchat import CompatibleProcessor
-from flask import render_template
 
 from pathlib import Path
 from sse import Publisher
+from config import Config
 from datetime import datetime
 from playsound import playsound
+from flask import render_template
+from pydouyu.client import Client as douyuClient
+from pytchat import CompatibleProcessor, LiveChat as youtubeClient
 from xml.etree.ElementTree import Element, SubElement, ElementTree
-
-import threading
 
 
 app = flask.Flask(__name__)
 publisher = Publisher()
 
 
-config = config.get("config.json")
-
-
 _now_timestamp = int(time.time())
 _now_array = time.localtime(_now_timestamp)
 _now_day_string = time.strftime("%Y-%m-%d", _now_array)
 
-if config.youtube.active:
+
+if Config.YOUTUBE_ACTIVE:
     youtubeChat = youtubeClient(
-        config.youtube.video_id, processor=CompatibleProcessor())
+        Config.YOUTUBE_LIVE_VIDEO_ID, processor=CompatibleProcessor())
 
 
 @app.route('/subscribe')
@@ -70,8 +66,8 @@ def makedirs():
 
 def facebookLive():
     """"輸出 Facebook 的聊天內容。"""
-    url = "https://streaming-graph.facebook.com/" + config.facebook.live_video_id + "/live_comments?access_token=" + \
-        config.facebook.access_token + \
+    url = "https://streaming-graph.facebook.com/" + Config.FACEBOOK_LIVE_VIDEO_ID + "/live_comments?access_token=" + \
+        Config.FACEBOOK_ACCESS_TOKEN + \
         "&comment_rate=one_per_two_seconds&fields=from{name,id},message"
     response = with_urllib3(url)
     client = sseclient.SSEClient(response)
@@ -80,18 +76,18 @@ def facebookLive():
         print(f"[Facebook] {data['from']['name']}: {data['message']}")
         publisher.publish(json.dumps(
             {"channel": "facebook", "author": data['from']['name'], "message": data['message'], "time": time.strftime("%H:%M:%S")}))
-        voice(data['message'])
+        if Config.SPEECH_ACTIVE:
+            voice(data['message'])
 
 
 def twitchLive(data, helix):
     """"輸出 Twitch 的聊天內容。"""
     print(f"[Twitch] {data.sender}: {data.text}")
-
-    author = helix.user(data.sender).display_name
-
-    publisher.publish(json.dumps({"channel": "twitch", "author": author,
+    # author = helix.user(data.sender).display_name
+    publisher.publish(json.dumps({"channel": "twitch", "author": data.sender,
                                   "message": data.text, "time": time.strftime("%H:%M:%S")}))
-    voice(data.text)
+    if Config.SPEECH_ACTIVE:
+        voice(data.text)
 
 
 def youtubeLiveMessage():
@@ -102,9 +98,9 @@ def youtubeLiveMessage():
             polling = data['pollingIntervalMillis']/1000
             for c in data['items']:
                 if c.get('snippet'):
-                    publisher.publish(json.dumps(
-                        {"channel": "youtube", "author": c['authorDetails']['displayName'], "message": c['snippet']['displayMessage'], "time": time.strftime("%H:%M:%S")}))
-                    voice(c['snippet']['displayMessage'])
+                    publisher.publish(json.dumps({"channel": "youtube", "author": c['authorDetails']['displayName'], "message": c['snippet']['displayMessage'], "time": time.strftime("%H:%M:%S")}))
+                    if Config.SPEECH_ACTIVE:
+                        voice(c['snippet']['displayMessage'])
                     time.sleep(polling/len(data['items']))
         except KeyboardInterrupt:
             youtubeChat.terminate()
@@ -117,7 +113,8 @@ def douyuLiveMessage(data):
     try:
         publisher.publish(json.dumps(
             {"channel": "douyu", "author": data['nn'], "message":  data['txt'], "time": time.strftime("%H:%M:%S")}))
-        voice(data['txt'])
+        if Config.SPEECH_ACTIVE:
+            voice(data['txt'])
     except Exception as e:
         print("douyuLiveMessage failed. Exception: %s" % e)
 
@@ -125,11 +122,13 @@ def douyuLiveMessage(data):
 def voice(message: str):
     """產生神經語言的聲音檔案。"""
     # azure speech 基本設定
-    speech_key, service_region = config.speech.token, config.speech.region
     speech_config = speechsdk.SpeechConfig(
-        subscription=speech_key, region=service_region, speech_recognition_language=config.speech.speak.voice.name)
+        subscription=Config.SPEECH_TOKEN,
+        region=Config.SPEECH_REGION,
+        speech_recognition_language=Config.SPEECH_VOICE_NAME)
     speech_synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config, audio_config=None)
+        speech_config=speech_config,
+        audio_config=None)
 
     # 更新時間戳
     _now_timestamp = int(time.time())
@@ -151,13 +150,13 @@ def voice(message: str):
 def build_XAL(message: str, _file_name: str):
     """產生神經語言需要的 XML 檔案。"""
     speak = Element("speak")
-    speak.attrib["version"] = config.speech.speak.version
-    speak.attrib["xmlns"] = config.speech.speak.xmlns
-    speak.attrib["xml:lang"] = config.speech.speak.xmllang
+    speak.attrib["version"] = 1.0
+    speak.attrib["xmlns"] = 'https://www.w3.org/2001/10/synthesis'
+    speak.attrib["xml:lang"] = 'zh-TW'
     voice = SubElement(speak, "voice")
-    voice.attrib["name"] = config.speech.speak.voice.name
+    voice.attrib["name"] = Config.SPEECH_VOICE_NAME
     prosody = SubElement(voice, "prosody")
-    prosody.attrib["rate"] = config.speech.speak.voice.prosody.rate
+    prosody.attrib["rate"] = Config.SPEECH_VOICE_PROSODY_RATE
     prosody.text = message
     indent(speak)
     tree = ElementTree(speak)
@@ -204,26 +203,26 @@ def with_requests(url):
 if __name__ == "__main__":
     makedirs()
 
-    if config.facebook.active:
-        __threadFacebook = threading.Thread(target=facebookLive)
-        __threadFacebook.start()
+    if Config.FACEBOOK_ACTIVE:
+        _threadFacebook = threading.Thread(target=facebookLive)
+        _threadFacebook.start()
 
-    if config.twitch.active:
-        helix = twitch.Helix(client_id=config.twitch.client_id,
+    if Config.TWITCH_ACTIVE:
+        helix = twitch.Helix(client_id=Config.TWITCH_CLIENT_ID,
                              use_cache=True,
-                             bearer_token=config.twitch.bearer_token)
-        twitch.Chat(channel=config.twitch.channel,
-                    nickname=config.twitch.nickname,
-                    oauth=config.twitch.token).subscribe(lambda message: twitchLive(message, helix))
+                             bearer_token=Config.TWITCH_BEARER_TOKEN)
+        twitch.Chat(channel=Config.TWITCH_CHANNEL,
+                    nickname=Config.TWITCH_NICKNAME,
+                    oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchLive(message, helix))
 
-    if config.douyu.active:
-        douyu = douyuClient(room_id=config.douyu.room_id,
-                            barrage_host=config.douyu.barrage_host)
+    if Config.YOUTUBE_ACTIVE:
+        _threadYouTube = threading.Thread(target=youtubeLiveMessage)
+        _threadYouTube.start()
+
+    if Config.DOUYU_ACTIVE:
+        douyu = douyuClient(room_id=Config.DOUYU_ROOM_ID,
+                            barrage_host=Config.DOUYU_BARRAGE_HOST)
         douyu.add_handler('chatmsg', douyuLiveMessage)
         douyu.start()
-
-    if config.youtube.active:
-        __t_youtube = threading.Thread(target=youtubeLiveMessage)
-        __t_youtube.start()
 
     app.run(debug=True, threaded=True)
