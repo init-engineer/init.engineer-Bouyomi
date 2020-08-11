@@ -4,28 +4,27 @@ import json
 import time
 import flask
 import pprint
-import random
 import string
-import twitch
 import socket
 import threading
-import sseclient
-import azure.cognitiveservices.speech as speechsdk
-
 
 from pathlib import Path
-from sse import Publisher
 from config import Config
 from datetime import datetime
-from playsound import playsound
 from flask import render_template
-from pydouyu.client import Client as douyuClient
-from pytchat import CompatibleProcessor, LiveChat as youtubeClient
-from xml.etree.ElementTree import Element, SubElement, ElementTree
 
+import voice
 
-app = flask.Flask(__name__)
+from sse import Publisher
+from makedirs import MakeDirs
+
 publisher = Publisher()
+
+
+_threadFacebook = None
+_threadTwitch = None
+_threadYoutube = None
+_threadDouyu = None
 
 
 _now_timestamp = int(time.time())
@@ -33,74 +32,82 @@ _now_array = time.localtime(_now_timestamp)
 _now_day_string = time.strftime("%Y-%m-%d", _now_array)
 
 
-if Config.YOUTUBE_ACTIVE:
-    youtubeChat = youtubeClient(
-        Config.YOUTUBE_LIVE_VIDEO_ID, processor=CompatibleProcessor())
+# ==============================
+# Flask Route
+# ==============================
 
 
-@app.route('/subscribe')
-def subscribe():
-    return flask.Response(publisher.subscribe(), content_type='text/event-stream')
+app = flask.Flask(__name__)
 
 
 @app.route('/')
-def root():
+def index():
     ip = flask.request.remote_addr
     publisher.publish('New visit from {} at {}!'.format(ip, datetime.now()))
     return render_template('index.html')
 
 
-def makedirs():
-    """將所需的資料夾建立起來。"""
-    if not os.path.exists("./talks"):
-        os.makedirs("./talks")
-    if not os.path.exists("./talks/voices"):
-        os.makedirs("./talks/voices")
-    if not os.path.exists("./talks/xmls"):
-        os.makedirs("./talks/xmls")
-    if not os.path.exists("./talks/voices/" + _now_day_string):
-        os.makedirs("./talks/voices/" + _now_day_string)
-    if not os.path.exists("./talks/xmls/" + _now_day_string):
-        os.makedirs("./talks/xmls/" + _now_day_string)
+@app.route('/notify')
+def notify():
+    return flask.Response(publisher.subscribe(), content_type='text/event-stream')
 
 
-def facebookLive():
+# ==============================
+# 直播平台監聽
+# ==============================
+
+
+def facebookLive(self):
     """"輸出 Facebook 的聊天內容。"""
-    url = "https://streaming-graph.facebook.com/" + Config.FACEBOOK_LIVE_VIDEO_ID + "/live_comments?access_token=" + \
-        Config.FACEBOOK_ACCESS_TOKEN + \
-        "&comment_rate=one_per_two_seconds&fields=from{name,id},message"
-    response = with_urllib3(url)
+    import urllib3, sseclient
+    url = f"https://streaming-graph.facebook.com/{Config.FACEBOOK_LIVE_VIDEO_ID}/live_comments?access_token={Config.FACEBOOK_ACCESS_TOKEN}&comment_rate=one_per_two_seconds&fields=from{name,id},message"
+    http = urllib3.PoolManager()
+    response = http.request('GET', url, preload_content=False)
     client = sseclient.SSEClient(response)
     for event in client.events():
         data = json.loads(event.data)
-        print(f"[Facebook] {data['from']['name']}: {data['message']}")
-        publisher.publish(json.dumps(
-            {"channel": "facebook", "author": data['from']['name'], "message": data['message'], "time": time.strftime("%H:%M:%S")}))
+        ssePublish('facebook', data['from']['name'], data['message'])
         if Config.SPEECH_ACTIVE:
-            voice(data['message'])
+            voice.voice(data['message'])
 
 
-def twitchLive(data, helix):
+def twitchLive():
+    import twitch
+    # helix = twitch.Helix(client_id=Config.TWITCH_CLIENT_ID,
+    #                      use_cache=True,
+    #                      bearer_token=Config.TWITCH_BEARER_TOKEN)
+    twitch.Chat(channel=Config.TWITCH_CHANNEL,
+                nickname=Config.TWITCH_NICKNAME,
+                oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchChat(message))
+    # oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchLive(message, helix))
+
+
+def twitchChat(data):
+    # def twitchLive(data, helix):
     """"輸出 Twitch 的聊天內容。"""
-    print(f"[Twitch] {data.sender}: {data.text}")
+    ssePublish('twitch', data.sender, data.text)
     # author = helix.user(data.sender).display_name
-    publisher.publish(json.dumps({"channel": "twitch", "author": data.sender,
-                                  "message": data.text, "time": time.strftime("%H:%M:%S")}))
+    # publisher.PublisherSingleton._instance.publish('twitch', author, data.text)
     if Config.SPEECH_ACTIVE:
-        voice(data.text)
+        voice.voice(data.text)
 
 
-def youtubeLiveMessage():
-    """輸出Youtube的聊天內容。"""
+def youtubeLiveChat():
+    from pytchat import CompatibleProcessor, LiveChat as youtubeClient
+    youtubeChat = youtubeClient(
+        Config.YOUTUBE_LIVE_VIDEO_ID,
+        processor=CompatibleProcessor())
     while youtubeChat.is_alive():
         try:
             data = youtubeChat.get()
             polling = data['pollingIntervalMillis']/1000
-            for c in data['items']:
-                if c.get('snippet'):
-                    publisher.publish(json.dumps({"channel": "youtube", "author": c['authorDetails']['displayName'], "message": c['snippet']['displayMessage'], "time": time.strftime("%H:%M:%S")}))
+            for chat in data['items']:
+                if chat.get('snippet'):
+                    ssePublish('youtube',
+                        chat['authorDetails']['displayName'],
+                        chat['snippet']['displayMessage'])
                     if Config.SPEECH_ACTIVE:
-                        voice(c['snippet']['displayMessage'])
+                        voice.voice(chat['snippet']['displayMessage'])
                     time.sleep(polling/len(data['items']))
         except KeyboardInterrupt:
             youtubeChat.terminate()
@@ -108,121 +115,82 @@ def youtubeLiveMessage():
             print("youtube failed. Exception: %s" % e)
 
 
-def douyuLiveMessage(data):
-    """輸出鬥魚的聊天內容。"""
+def douyuLive():
+    from pydouyu.client import Client as douyuClient
+    douyu = douyuClient(room_id=Config.DOUYU_ROOM_ID,
+                        barrage_host=Config.DOUYU_BARRAGE_HOST)
+    douyu.add_handler('chatmsg', douyuChat)
+    douyu.start()
+
+
+def douyuChat(data):
     try:
-        publisher.publish(json.dumps(
-            {"channel": "douyu", "author": data['nn'], "message":  data['txt'], "time": time.strftime("%H:%M:%S")}))
+        ssePublish('douyu', data['nn'], data['txt'])
         if Config.SPEECH_ACTIVE:
-            voice(data['txt'])
+            voice.voice(data['txt'])
     except Exception as e:
         print("douyuLiveMessage failed. Exception: %s" % e)
 
 
-def voice(message: str):
-    """產生神經語言的聲音檔案。"""
-    # azure speech 基本設定
-    speech_config = speechsdk.SpeechConfig(
-        subscription=Config.SPEECH_TOKEN,
-        region=Config.SPEECH_REGION,
-        speech_recognition_language=Config.SPEECH_VOICE_NAME)
-    speech_synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config,
-        audio_config=None)
-
-    # 更新時間戳
-    _now_timestamp = int(time.time())
-    _now_time_string = time.strftime("%H%M%S", _now_array)
-
-    # 建立 XML 檔案並產生聲音檔案、讀取播放
-    _file_name = f"{_now_time_string}-{randomString()}"
-    build_XAL(message, _file_name)
-    ssml_string = open(
-        f"./talks/xmls/{_now_day_string}/{_file_name}.xml", "r", encoding="utf-8").read()
-    result = speech_synthesizer.speak_ssml_async(ssml_string).get()
-    stream = speechsdk.AudioDataStream(result)
-    stream.save_to_wav_file(
-        f"./talks/voices/{_now_day_string}/{_file_name}.wav")
-    playsound(f"./talks/voices/{_now_day_string}/{_file_name}.wav")
-    # print("[" + time.strftime("%H:%M:%S", _now_array) + "] " + message)
+# ==============================
+# Custom function
+# ==============================
 
 
-def build_XAL(message: str, _file_name: str):
-    """產生神經語言需要的 XML 檔案。"""
-    speak = Element("speak")
-    speak.attrib["version"] = 1.0
-    speak.attrib["xmlns"] = 'https://www.w3.org/2001/10/synthesis'
-    speak.attrib["xml:lang"] = 'zh-TW'
-    voice = SubElement(speak, "voice")
-    voice.attrib["name"] = Config.SPEECH_VOICE_NAME
-    prosody = SubElement(voice, "prosody")
-    prosody.attrib["rate"] = Config.SPEECH_VOICE_PROSODY_RATE
-    prosody.text = message
-    indent(speak)
-    tree = ElementTree(speak)
-    tree.write(f"./talks/xmls/{_now_day_string}/{_file_name}.xml",
-               encoding="utf-8", xml_declaration=False)
+def ssePublish(type, name, message):
+    print(f"[{type}] {name}: {message}")
+    publisher.publish(
+        json.dumps({
+            "channel": type,
+            "author": name,
+            "message": message,
+            "time": time.strftime("%H:%M:%S")
+        }))
 
 
-def indent(elem, level=0):
-    """將內容縮排。"""
-    i = "\n" + level*"  "
-    if len(elem):
-        if not elem.text or not elem.text.strip():
-            elem.text = i + "  "
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-        for elem in elem:
-            indent(elem, level + 1)
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-    else:
-        if level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i
-
-
-def randomString(stringLength=8):
-    """產生亂數字串。"""
-    letters = string.ascii_lowercase
-    return ''.join(random.choice(letters) for i in range(stringLength))
-
-
-def with_urllib3(url):
-    """Get a streaming response for the given event feed using urllib3."""
-    import urllib3
-    http = urllib3.PoolManager()
-    return http.request('GET', url, preload_content=False)
-
-
-def with_requests(url):
-    """Get a streaming response for the given event feed using requests."""
-    import requests
-    return requests.get(url, stream=True)
+# ==============================
+# __name__
+# ==============================
 
 
 if __name__ == "__main__":
-    makedirs()
+    MakeDirs()
 
     if Config.FACEBOOK_ACTIVE:
-        _threadFacebook = threading.Thread(target=facebookLive)
-        _threadFacebook.start()
-
+        if _threadFacebook is None:
+            print("啟動 Facebook 直播監聽 ...")
+            _threadFacebook = threading.Thread(target=facebookLive)
+            _threadFacebook.start()
+            pass
+        else:
+            print("Facebook 直播監聽正在運作當中。")
+            pass
     if Config.TWITCH_ACTIVE:
-        helix = twitch.Helix(client_id=Config.TWITCH_CLIENT_ID,
-                             use_cache=True,
-                             bearer_token=Config.TWITCH_BEARER_TOKEN)
-        twitch.Chat(channel=Config.TWITCH_CHANNEL,
-                    nickname=Config.TWITCH_NICKNAME,
-                    oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchLive(message, helix))
-
+        if _threadTwitch is None:
+            print("啟動 Twitch 直播監聽 ...")
+            _threadTwitch = threading.Thread(target=twitchLive)
+            _threadTwitch.start()
+            pass
+        else:
+            print("Twitch 直播監聽正在運作當中。")
+            pass
     if Config.YOUTUBE_ACTIVE:
-        _threadYouTube = threading.Thread(target=youtubeLiveMessage)
-        _threadYouTube.start()
-
+        if _threadYoutube is None:
+            print("啟動 YouTube 直播監聽 ...")
+            _threadYoutube = threading.Thread(target=youtubeLiveChat)
+            _threadYoutube.start()
+            pass
+        else:
+            print("YouTube 直播監聽正在運作當中。")
+            pass
     if Config.DOUYU_ACTIVE:
-        douyu = douyuClient(room_id=Config.DOUYU_ROOM_ID,
-                            barrage_host=Config.DOUYU_BARRAGE_HOST)
-        douyu.add_handler('chatmsg', douyuLiveMessage)
-        douyu.start()
+        if _threadDouyu is None:
+            print("啟動 DouYu 直播監聽 ...")
+            _threadDouyu = threading.Thread(target=douyuLive)
+            _threadDouyu.start()
+            pass
+        else:
+            print("DouYu 直播監聽正在運作當中。")
+            pass
 
     app.run(debug=True, threaded=True)
