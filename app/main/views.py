@@ -11,10 +11,13 @@ from ..utils import chart, makedirs, sseserver
 def index():
     makedirs.MakeDirs()
     chart.Chart()
-    return render_template('index.html')
+    return render_template('socket_index.html')
+    # return render_template('sse_index.html')
 
 
 @main.route('/subscribe')
 def subscribe():
-    publish = sseserver.SseServer()
-    return Response(publish.getInstance().subscribe(), content_type='text/event-stream')
+    # SSE Server
+    publish = sseserver
+    publish = publish.SseServer()
+    return Response(publish.instance.subscribe(), content_type='text/event-stream')

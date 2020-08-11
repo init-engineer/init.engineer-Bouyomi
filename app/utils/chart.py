@@ -8,11 +8,13 @@ import json
 import string
 import twitch
 import random
+import socket
 import sseclient
 import threading
 
-from . import voice, sseserver
+from . import voice
 from config import Config
+from .socketserver import SocketServer
 from pytchat import CompatibleProcessor
 from pytchat import LiveChat as youtubeClient
 from pydouyu.client import Client as douyuClient
@@ -20,10 +22,15 @@ from pydouyu.client import Client as douyuClient
 
 class Chart(object):
     _instance = None
+    
     _threadFacebook = None
     _threadTwitch = None
     _threadYoutube = None
     _threadDouyu = None
+
+    _socket = None
+    _socketConn = None
+    _socketAddr = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -67,6 +74,28 @@ class Chart(object):
             else:
                 print("DouYu 直播監聽正在運作當中。")
                 pass
+        if self._socket is None:
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.bind(('', 19245))
+            self._socket.listen(5)
+            self._socket.recv(4096)
+            print('建立 Socket 連線 ...')
+            while True:
+                self._socketConn, self._socketAddr = self._socket.accept()
+                print(f"有新的連線來自: {self._socketAddr}")
+                threading._start_new_thread(handle, (self._socketConn, self._socketAddr))
+
+        def handle(self, conn, addr):
+            while True:
+                try:
+                    client.send(text)
+                    print(addr[0],addr[1],'>>',text.decode())
+                except:
+                    print(addr[0],addr[1],'>>say goodby')
+                    break
+
+    def send(self, message):
+        self._socketConn.send(bytes(message, encoding='utf-8'))
 
 
 def facebookLiveChat(self):
@@ -143,14 +172,29 @@ def douyuChat(data):
 
 def ssePublish(type, name, message):
     print(f"[{type}] {name}: {message}")
-    publish = sseserver.SseServer()
-    publish.getInstance().publish(
+    
+    # Socekt Server
+    # publish = SocketServer()
+    # publish = publish.getInstance()
+    Chart().send(
         json.dumps({
             "channel": type,
             "author": name,
             "message": message,
             "time": time.strftime("%H:%M:%S")
         }))
+    print(f"[{type}] {name}: {message} | Socket 發送完畢")
+
+    # SSE Server
+    # publish = sseserver
+    # publish = publish.SseServer()
+    # publish.instance.publish(
+    #     json.dumps({
+    #         "channel": type,
+    #         "author": name,
+    #         "message": message,
+    #         "time": time.strftime("%H:%M:%S")
+    #     }))
 
 
 def randomString(stringLength=8):

@@ -178,13 +178,21 @@
         }
     </style>
     <script>
-        var scroll = setInterval(function () {
-            window.scrollTo(0, document.body.scrollHeight)
-        }, 1000);
-        var eventSource = new EventSource('/notify');
-        eventSource.onmessage = function (e) {
-            console.log(e.data);
-            var data = JSON.parse(e.data);
+        //使用 WebSocket 的網址向 Server 開啟連結
+        let ws = new WebSocket('ws://127.0.0.1:19245')
+
+        ws.onopen = () => {
+            console.log('open connection')
+        }
+
+        ws.onclose = () => {
+            console.log('close connection')
+        }
+
+        //接收 Server 發送的訊息
+        ws.onmessage = event => {
+            console.log(event)
+            var data = JSON.parse(event.data);
             var icon = null;
             switch (data.channel) {
                 case "facebook":
@@ -205,7 +213,7 @@
                 '</div>' +
                 '</div>' +
                 '</div>';
-        };
+        }
     </script>
 </body>
 

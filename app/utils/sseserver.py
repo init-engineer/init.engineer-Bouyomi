@@ -10,19 +10,19 @@ from .sse import Publisher
 
 class SseServer:
     # Here will be the instance stored.
-    __instance = None
+    instance = None
 
     @staticmethod
     def getInstance():
         """ Static access method. """
-        if SseServer.__instance is None:
+        if SseServer.instance is None:
             SseServer()
             print('SSE Server 不存在，重新呼叫 ...')
         print('回傳 SSE Server')
-        return SseServer.__instance 
+        return SseServer.instance 
 
     def __init__(self):
         """ Virtually private constructor. """
-        if self.__instance is None:
-            self.__instance = Publisher()
+        if self.instance is None:
+            self.instance = Publisher()
             print('建立 SSE Server ...')
