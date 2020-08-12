@@ -42,6 +42,8 @@ app = flask.Flask(__name__)
 
 @app.route('/')
 def index():
+    MakeDirs()
+    chart()
     return render_template(f"{Config.CHAT_VIEW}.html")
 
 
@@ -101,12 +103,12 @@ def chart():
 def facebookLive():
     """"輸出 Facebook 的聊天內容。"""
     import sseclient
-    url = "https://streaming-graph.facebook.com/" + Config.FACEBOOK_LIVE_VIDEO_ID + "/live_comments?access_token=" + Config.FACEBOOK_ACCESS_TOKEN + "&comment_rate=one_per_two_seconds&fields=from{name,id},message"
+    url = "https://streaming-graph.facebook.com/" + Config.FACEBOOK_LIVE_VIDEO_ID + "/live_comments?access_token=" + Config.FACEBOOK_ACCESS_TOKEN + "&comment_rate=one_per_two_seconds&fields=from{name,picture,id},message"
     response = with_urllib3(url)
     client = sseclient.SSEClient(response)
     for event in client.events():
         data = json.loads(event.data)
-        ssePublish('facebook', data['from']['name'], data['message'])
+        ssePublish('facebook', data['from']['name'], data['message'], data['from']['picture']['data']['url'])
         if Config.SPEECH_ACTIVE:
             voice.voice(data['message'])
 
@@ -208,6 +210,4 @@ def with_requests(url):
 
 
 if __name__ == "__main__":
-    MakeDirs()
-    chart()
     app.run(debug=True, threaded=True)
