@@ -15,6 +15,11 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'xxx'
     CACHE_KEY = "bouyomi:%s"
 
+    
+    # 棒讀機顯示樣式設定，目前樣式提供：
+    # index - 經典樣式
+    CHAT_VIEW = "index"
+
 
     # 微軟 Azure 文字轉語音服務
     # 
@@ -27,8 +32,16 @@ class Config:
 
     # Twitch 直播留言設定
     # [!注意!]
-    #   至少需要 TWITCH_CHANNEL、TWITCH_OAUTH_TOKEN 這兩項資料，才能啟動聊天室監聽服務
-    #   OAuth Token 可以從這裡獲得 https://twitchapps.com/tmi/
+    #   TWITCH_NICKNAME
+    #       隨便填啦，目前不知道會用在哪邊。
+    #   TWITCH_CHANNEL
+    #   TWITCH_OAUTH_TOKEN
+    #       至少需要這兩項資料，才能啟動聊天室監聽服務
+    #       OAuth Token 可以從這裡獲得 https://twitchapps.com/tmi/
+    #   TWITCH_CLIENT_ID
+    #   TWITCH_BEARER_TOKEN
+    #       取得使用者名稱、大頭貼的部分，需要透過 Twitch 應用程式來申請
+    #       Twitch 應用程式 https://dev.twitch.tv/console/apps
     TWITCH_ACTIVE = False
     TWITCH_CHANNEL = "YOUR_TWITCH_CHANNEL"
     TWITCH_NICKNAME = "YOUR_TWITCH_NICKNAME"

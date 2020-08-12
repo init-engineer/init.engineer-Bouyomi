@@ -178,34 +178,120 @@
         }
     </style>
     <script>
+        // 自動滑動到最底端
         var scroll = setInterval(function () {
             window.scrollTo(0, document.body.scrollHeight)
         }, 1000);
-        var eventSource = new EventSource('/notify');
-        eventSource.onmessage = function (e) {
-            console.log(e.data);
-            var data = JSON.parse(e.data);
-            var icon = null;
+
+        function isFunction(functionToCheck) {
+            return functionToCheck && {}.toString.call(functionToCheck) === '[object Function]';
+        }
+
+        function debounce(func, wait) {
+            var timeout;
+            var waitFunc;
+
+            return function () {
+                if (isFunction(wait)) {
+                    waitFunc = wait;
+                } else {
+                    waitFunc = function () {
+                        return wait
+                    };
+                }
+
+                var context = this,
+                    args = arguments;
+                var later = function () {
+                    timeout = null;
+                    func.apply(context, args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, waitFunc());
+            };
+        }
+
+        // reconnectFrequencySeconds doubles every retry
+        let reconnectFrequencySeconds = 1;
+        let evtSource;
+
+        let reconnectFunc = debounce(function () {
+            setupEventSource();
+            // Double every attempt to avoid overwhelming server
+            reconnectFrequencySeconds *= 2;
+            // Max out at ~1 minute as a compromise between user experience and server load
+            if (reconnectFrequencySeconds >= 64) {
+                reconnectFrequencySeconds = 64;
+            }
+        }, function () {
+            return reconnectFrequencySeconds * 1000
+        });
+
+        // 啟動 EventSource
+        function setupEventSource() {
+            let evtSource = new EventSource('/notify');
+
+            // 監聽事件
+            evtSource.onmessage = function (e) {
+                const data = JSON.parse(e.data);
+                console.log(data);
+                document.getElementById('msger-chat').innerHTML += this.drawHTMLTag(
+                    data.picture,
+                    data.author,
+                    data.message,
+                    data.channel);
+            };
+            // 如果 EventSource 啟用連線
+            evtSource.onopen = function (e) {
+                // Reset reconnect frequency upon successful connection
+                reconnectFrequencySeconds = 1;
+                document.getElementById('msger-chat').innerHTML += this.drawHTMLTag(
+                    "https://image.flaticon.com/icons/svg/845/845646.svg",
+                    "系統通知",
+                    "啟動連線，棒讀機運作中 ...");
+            };
+            // 如果 EventSource 斷線了
+            evtSource.onerror = function (e) {
+                evtSource.close();
+                document.getElementById('msger-chat').innerHTML += this.drawHTMLTag(
+                    "https://image.flaticon.com/icons/svg/845/845648.svg",
+                    "系統通知",
+                    "棒讀機遇到不明問題，小小機器人正在嘗試修復中 ...");
+                reconnectFunc();
+            };
+        }
+
+        // 負責拼湊 HTML Tag
+        function drawHTMLTag(picture, author, message, channel = null) {
+            const date = new Date();
+            let icon = null;
             switch (data.channel) {
                 case "facebook":
-                    icon = "https://www.flaticon.com/premium-icon/icons/svg/2335/2335286.svg";
+                    icon = "https://image.flaticon.com/icons/svg/355/355969.svg";
                     break;
                 case "twitch":
-                    icon = "https://www.flaticon.com/premium-icon/icons/svg/2335/2335303.svg";
+                    icon = "https://image.flaticon.com/icons/svg/356/356001.svg";
+                    break;
+                case "youtube":
+                    icon = "https://image.flaticon.com/icons/svg/355/355983.svg";
+                    break;
+                case "douyu":
+                    icon = "https://image.flaticon.com/icons/svg/1805/1805939.svg";
                     break;
             }
-            document.getElementById('msger-chat').innerHTML += '<div class="msg left-msg">' +
-                '<div class="msg-img" style="background-image: url(' + icon + ')"></div>' +
-                '<div class="msg-bubble">' +
-                '<div class="msg-info">' +
-                '<div class="msg-info-name">' + data.author + '</div>' +
-                '<div class="msg-info-time">' + data.time + '</div>' +
-                '</div>' +
-                '<div class="msg-text">' + data.message + '</div>' +
-                '</div>' +
-                '</div>' +
-                '</div>';
-        };
+            return  '<div class="msg left-msg">' +
+                        '<div class="msg-img" style="background-image: url(' + picture + ')"></div>' +
+                        '<div class="msg-bubble">' +
+                            '<div class="msg-info">' +
+                                '<div class="msg-info-name">' + author + '</div>' +
+                                    '<div class="msg-info-time">' + date.toLocaleTimeString() + '</div>' +
+                                '</div>' +
+                                '<div class="msg-text">' + message + '</div>' +
+                            '</div>' + 
+                        '</div>' +
+                    '</div>';
+        }
+        setupEventSource();
     </script>
 </body>
 

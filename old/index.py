@@ -10,13 +10,13 @@ import threading
 
 from pathlib import Path
 from config import Config
-from datetime import datetime
 from flask import render_template
 
 import voice
 
 from sse import Publisher
 from makedirs import MakeDirs
+
 
 publisher = Publisher()
 
@@ -42,9 +42,7 @@ app = flask.Flask(__name__)
 
 @app.route('/')
 def index():
-    ip = flask.request.remote_addr
-    publisher.publish('New visit from {} at {}!'.format(ip, datetime.now()))
-    return render_template('index.html')
+    return render_template(f"{Config.CHAT_VIEW}.html")
 
 
 @app.route('/notify')
@@ -57,12 +55,54 @@ def notify():
 # ==============================
 
 
-def facebookLive(self):
+def chart():
+    if Config.FACEBOOK_ACTIVE:
+        global _threadFacebook
+        if _threadFacebook is None:
+            print("[DEBUG] 啟動 Facebook 直播監聽 ...")
+            _threadFacebook = threading.Thread(target=facebookLive)
+            _threadFacebook.start()
+            pass
+        else:
+            print("[DEBUG] Facebook 直播監聽正在運作當中。")
+            pass
+    if Config.TWITCH_ACTIVE:
+        global _threadTwitch
+        if _threadTwitch is None:
+            print("[DEBUG] 啟動 Twitch 直播監聽 ...")
+            _threadTwitch = threading.Thread(target=twitchLive)
+            _threadTwitch.start()
+            pass
+        else:
+            print("[DEBUG] Twitch 直播監聽正在運作當中。")
+            pass
+    if Config.YOUTUBE_ACTIVE:
+        global _threadYoutube
+        if _threadYoutube is None:
+            print("[DEBUG] 啟動 YouTube 直播監聽 ...")
+            _threadYoutube = threading.Thread(target=youtubeLiveChat)
+            _threadYoutube.start()
+            pass
+        else:
+            print("[DEBUG] YouTube 直播監聽正在運作當中。")
+            pass
+    if Config.DOUYU_ACTIVE:
+        global _threadDouyu
+        if _threadDouyu is None:
+            print("[DEBUG] 啟動 DouYu 直播監聽 ...")
+            _threadDouyu = threading.Thread(target=douyuLive)
+            _threadDouyu.start()
+            pass
+        else:
+            print("[DEBUG] DouYu 直播監聽正在運作當中。")
+            pass
+
+
+def facebookLive():
     """"輸出 Facebook 的聊天內容。"""
-    import urllib3, sseclient
-    url = f"https://streaming-graph.facebook.com/{Config.FACEBOOK_LIVE_VIDEO_ID}/live_comments?access_token={Config.FACEBOOK_ACCESS_TOKEN}&comment_rate=one_per_two_seconds&fields=from{name,id},message"
-    http = urllib3.PoolManager()
-    response = http.request('GET', url, preload_content=False)
+    import sseclient
+    url = "https://streaming-graph.facebook.com/" + Config.FACEBOOK_LIVE_VIDEO_ID + "/live_comments?access_token=" + Config.FACEBOOK_ACCESS_TOKEN + "&comment_rate=one_per_two_seconds&fields=from{name,id},message"
+    response = with_urllib3(url)
     client = sseclient.SSEClient(response)
     for event in client.events():
         data = json.loads(event.data)
@@ -73,21 +113,21 @@ def facebookLive(self):
 
 def twitchLive():
     import twitch
-    # helix = twitch.Helix(client_id=Config.TWITCH_CLIENT_ID,
-    #                      use_cache=True,
-    #                      bearer_token=Config.TWITCH_BEARER_TOKEN)
+    helix = twitch.Helix(client_id=Config.TWITCH_CLIENT_ID,
+                         use_cache=True,
+                         bearer_token=Config.TWITCH_BEARER_TOKEN)
     twitch.Chat(channel=Config.TWITCH_CHANNEL,
                 nickname=Config.TWITCH_NICKNAME,
-                oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchChat(message))
-    # oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchLive(message, helix))
+                oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchChat(message, helix))
+                # oauth=Config.TWITCH_OAUTH_TOKEN).subscribe(lambda message: twitchChat(message))
 
 
-def twitchChat(data):
-    # def twitchLive(data, helix):
+# def twitchChat(data):
+def twitchChat(data, helix):
     """"輸出 Twitch 的聊天內容。"""
-    ssePublish('twitch', data.sender, data.text)
-    # author = helix.user(data.sender).display_name
-    # publisher.PublisherSingleton._instance.publish('twitch', author, data.text)
+    # ssePublish('twitch', data.sender, data.text)
+    author = helix.user(data.sender)
+    ssePublish('twitch', author.display_name, data.text, author.profile_image_url)
     if Config.SPEECH_ACTIVE:
         voice.voice(data.text)
 
@@ -104,8 +144,8 @@ def youtubeLiveChat():
             for chat in data['items']:
                 if chat.get('snippet'):
                     ssePublish('youtube',
-                        chat['authorDetails']['displayName'],
-                        chat['snippet']['displayMessage'])
+                               chat['authorDetails']['displayName'],
+                               chat['snippet']['displayMessage'])
                     if Config.SPEECH_ACTIVE:
                         voice.voice(chat['snippet']['displayMessage'])
                     time.sleep(polling/len(data['items']))
@@ -137,15 +177,29 @@ def douyuChat(data):
 # ==============================
 
 
-def ssePublish(type, name, message):
-    print(f"[{type}] {name}: {message}")
+def ssePublish(type, name, message, picture = None):
+    print(f"[DEBUG] {type} - {name}: {message}")
     publisher.publish(
         json.dumps({
             "channel": type,
             "author": name,
             "message": message,
+            "picture": picture,
             "time": time.strftime("%H:%M:%S")
         }))
+
+
+def with_urllib3(url):
+    """Get a streaming response for the given event feed using urllib3."""
+    import urllib3
+    http = urllib3.PoolManager()
+    return http.request('GET', url, preload_content=False)
+
+
+def with_requests(url):
+    """Get a streaming response for the given event feed using requests."""
+    import requests
+    return requests.get(url, stream=True)
 
 
 # ==============================
@@ -155,42 +209,5 @@ def ssePublish(type, name, message):
 
 if __name__ == "__main__":
     MakeDirs()
-
-    if Config.FACEBOOK_ACTIVE:
-        if _threadFacebook is None:
-            print("啟動 Facebook 直播監聽 ...")
-            _threadFacebook = threading.Thread(target=facebookLive)
-            _threadFacebook.start()
-            pass
-        else:
-            print("Facebook 直播監聽正在運作當中。")
-            pass
-    if Config.TWITCH_ACTIVE:
-        if _threadTwitch is None:
-            print("啟動 Twitch 直播監聽 ...")
-            _threadTwitch = threading.Thread(target=twitchLive)
-            _threadTwitch.start()
-            pass
-        else:
-            print("Twitch 直播監聽正在運作當中。")
-            pass
-    if Config.YOUTUBE_ACTIVE:
-        if _threadYoutube is None:
-            print("啟動 YouTube 直播監聽 ...")
-            _threadYoutube = threading.Thread(target=youtubeLiveChat)
-            _threadYoutube.start()
-            pass
-        else:
-            print("YouTube 直播監聽正在運作當中。")
-            pass
-    if Config.DOUYU_ACTIVE:
-        if _threadDouyu is None:
-            print("啟動 DouYu 直播監聽 ...")
-            _threadDouyu = threading.Thread(target=douyuLive)
-            _threadDouyu.start()
-            pass
-        else:
-            print("DouYu 直播監聽正在運作當中。")
-            pass
-
+    chart()
     app.run(debug=True, threaded=True)
