@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# __author__ = 'kantai.developer@gmail.com'
+# __author__ = "kantai.developer@gmail.com"
 # @Time    : 2020/08/07
 
 
@@ -38,12 +38,10 @@ def voice(message: str):
     # 建立 XML 檔案並產生聲音檔案、讀取播放
     _file_name = f"{_now_time_string}-{randomString()}"
     build_XAL(message, _file_name)
-    ssml_string = open(
-        f"./talks/xmls/{_now_day_string}/{_file_name}.xml", "r", encoding="utf-8").read()
+    ssml_string = open(f"./talks/xmls/{_now_day_string}/{_file_name}.xml", "r", encoding="utf-8").read()
     result = speech_synthesizer.speak_ssml_async(ssml_string).get()
     stream = speechsdk.AudioDataStream(result)
-    stream.save_to_wav_file(
-        f"./talks/voices/{_now_day_string}/{_file_name}.wav")
+    stream.save_to_wav_file(f"./talks/voices/{_now_day_string}/{_file_name}.wav")
     playsound(f"./talks/voices/{_now_day_string}/{_file_name}.wav")
     # print("[" + time.strftime("%H:%M:%S", _now_array) + "] " + message)
 
@@ -51,9 +49,9 @@ def voice(message: str):
 def build_XAL(message: str, _file_name: str):
     """產生神經語言需要的 XML 檔案。"""
     speak = Element("speak")
-    speak.attrib["version"] = 1.0
-    speak.attrib["xmlns"] = 'https://www.w3.org/2001/10/synthesis'
-    speak.attrib["xml:lang"] = 'zh-TW'
+    speak.attrib["version"] = "1.0"
+    speak.attrib["xmlns"] = "https://www.w3.org/2001/10/synthesis"
+    speak.attrib["xml:lang"] = "zh-TW"
     voice = SubElement(speak, "voice")
     voice.attrib["name"] = Config.SPEECH_VOICE_NAME
     prosody = SubElement(voice, "prosody")
@@ -61,8 +59,7 @@ def build_XAL(message: str, _file_name: str):
     prosody.text = message
     indent(speak)
     tree = ElementTree(speak)
-    tree.write(f"./talks/xmls/{_now_day_string}/{_file_name}.xml",
-               encoding="utf-8", xml_declaration=False)
+    tree.write(f"./talks/xmls/{_now_day_string}/{_file_name}.xml", encoding="utf-8", xml_declaration=False)
 
 
 def indent(elem, level=0):
@@ -85,8 +82,8 @@ def indent(elem, level=0):
 def randomString(stringLength=8):
     """產生亂數字串。"""
     letters = string.ascii_lowercase
-    return ''.join(random.choice(letters) for i in range(stringLength))
+    return "".join(random.choice(letters) for i in range(stringLength))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass
